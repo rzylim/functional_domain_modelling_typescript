@@ -3,7 +3,7 @@
 // related to the PlaceOrder workflow
 // ==================================
 
-import * as TE from "fp-ts/lib/TaskEither";
+import * as TE from "fp-ts/TaskEither";
 
 import { Address, CustomerInfo } from "./common.compound-types";
 import {

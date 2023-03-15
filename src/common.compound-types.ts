@@ -6,7 +6,7 @@
 //
 // ==================================
 
-import * as O from "fp-ts/lib/Option";
+import * as O from "fp-ts/Option";
 
 import { EmailAddress, String50, ZipCode } from "./common.simple-types";
 

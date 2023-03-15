@@ -1,8 +1,5 @@
-import * as E from "fp-ts/lib/Either";
-import * as O from "fp-ts/lib/Option";
-import { pipe } from "fp-ts/lib/function";
-import { foldMap, sequence } from "fp-ts/lib/ReadonlyNonEmptyArray";
-import { sequenceT } from "fp-ts/lib/Apply";
+import * as O from "fp-ts/Option";
+import * as E from "fp-ts/Either";
 
 /// Constrained to be 50 chars or less, not null
 declare const validString50: unique symbol; // do not export! keep private so that instances have to be created via the provided create function that enforces checks.
