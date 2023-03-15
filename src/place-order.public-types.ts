@@ -19,6 +19,9 @@ import {
 // ------------------------------------
 // inputs to the workflow
 
+// not using _tag to make it a 'concrete' type
+// since any such construction will do
+// for unvalidated data.
 export type UnvalidatedCustomerInfo = {
   FirstName: string;
   LastName: string;
@@ -53,12 +56,14 @@ export type UnvalidatedOrder = {
 
 // Event will be created if the Acknowledgment was successfully posted
 export type OrderAcknowledgmentSent = {
+  _tag: "OrderAcknowledgementSent";
   OrderId: OrderId;
   EmailAddress: EmailAddress;
 };
 
 // priced state
 export type PricedOrderLine = {
+  _tag: "PricedOrderLine";
   OrderLineId: OrderLineId;
   ProductCode: ProductCode;
   Quantity: OrderQuantity;
@@ -66,6 +71,7 @@ export type PricedOrderLine = {
 };
 
 export type PricedOrder = {
+  _tag: "PricedOrder";
   OrderId: OrderId;
   CustomerInfo: CustomerInfo;
   ShippingAddress: Address;
@@ -80,6 +86,7 @@ export type OrderPlaced = PricedOrder;
 /// Event to send to billing context
 /// Will only be created if the AmountToBill is not zero
 export type BillableOrderPlaced = {
+  _tag: "BillableOrderPlaced";
   OrderId: OrderId;
   BillingAddress: Address;
   AmountToBill: BillingAmount;
@@ -96,17 +103,19 @@ export type PlaceOrderEvent =
 // error outputs
 
 /// All the things that can go wrong in this workflow
-export type ValidationError = string;
+export type ValidationError = { _tag: "ValidationError"; value: string };
 
-export type PricingError = string;
+export type PricingError = { _tag: "PricingError"; value: string };
 
 export type ServiceInfo = {
+  _tag: "ServiceInfo";
   Name: string;
   Endpoint: string;
   // Endpoint: System.Uri
 };
 
 export type RemoteServiceError = {
+  _tag: "RemoteServiceError";
   Service: ServiceInfo;
   Exception: Error;
   // Exception : System.Exception
