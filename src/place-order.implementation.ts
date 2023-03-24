@@ -30,7 +30,6 @@ import { Address, CustomerInfo } from "./common.compound-types";
 
 import {
   OrderAcknowledgmentSent,
-  PlaceOrderError,
   PlaceOrderEvent,
   PricedOrder,
   PricedOrderLine,
@@ -41,8 +40,6 @@ import {
   UnvalidatedOrderLine,
   ValidationError,
 } from "./place-order.public-types";
-import { checkProductExists, getProductPrice } from "./place-order.api";
-import { identity } from "fp-ts";
 
 // ======================================================
 // Section 1 : Define each step in the workflow using types
@@ -95,7 +92,7 @@ export type ValidateOrder = (
   checkAddressExists: CheckAddressExists // dependency
 ) => (
   order: UnvalidatedOrder // input
-) => TE.TaskEither<ValidatedOrder, ValidationError>; // output
+) => TE.TaskEither<ValidationError, ValidatedOrder>; // output
 
 // ---------------------------
 // Pricing step
@@ -109,7 +106,7 @@ export type PriceOrder = (
   getProductPrice: GetProductPrice // dependency
 ) => (
   order: ValidatedOrder // input
-) => E.Either<PricedOrder, PricingError>; // output
+) => E.Either<PricingError, PricedOrder>; // output
 
 // ---------------------------
 // Send OrderAcknowledgment
@@ -323,12 +320,8 @@ export const toValidatedOrderLine =
       )
     );
 
-export const validateOrder =
-  (checkProductCodeExists: CheckProductCodeExists) =>
-  (checkAddressExists: CheckAddressExists) =>
-  (
-    unvalidatedOrder: UnvalidatedOrder
-  ): TE.TaskEither<ValidationError, ValidatedOrder> =>
+export const validateOrder: ValidateOrder =
+  (checkProductCodeExists) => (checkAddressExists) => (unvalidatedOrder) =>
     pipe(
       TE.Do,
       TE.bind("orderId", () =>
@@ -382,31 +375,29 @@ export const toPricedOrderLine =
     );
   };
 
-export const priceOrder =
-  (getProductPrice: GetProductPrice) =>
-  (validatedOrder: ValidatedOrder): E.Either<PlaceOrderError, PricedOrder> =>
-    pipe(
-      E.Do,
-      E.bind("lines", () =>
-        pipe(
-          validatedOrder.lines.map(toPricedOrderLine(getProductPrice)),
-          A.sequence(E.Applicative) // convert list of Results to a single Result
-        )
-      ),
-      E.bind("amountToBill", ({ lines }) =>
-        pipe(
-          lines.map(({ linePrice }) => linePrice), // get each line price
-          BillingAmount.sumPrices, // add them together as a BillingAmount
-          E.mapLeft(PricingError.fromOtherErrors) // convert to PlaceOrderError
-        )
-      ),
-      E.map(({ lines, amountToBill }) => ({
-        _tag: "PricedOrder",
-        ...validatedOrder,
-        lines,
-        amountToBill,
-      }))
-    );
+export const priceOrder: PriceOrder = (getProductPrice) => (validatedOrder) =>
+  pipe(
+    E.Do,
+    E.bind("lines", () =>
+      pipe(
+        validatedOrder.lines.map(toPricedOrderLine(getProductPrice)),
+        A.sequence(E.Applicative) // convert list of Results to a single Result
+      )
+    ),
+    E.bind("amountToBill", ({ lines }) =>
+      pipe(
+        lines.map(({ linePrice }) => linePrice), // get each line price
+        BillingAmount.sumPrices, // add them together as a BillingAmount
+        E.mapLeft(PricingError.fromOtherErrors) // convert to PlaceOrderError
+      )
+    ),
+    E.map(({ lines, amountToBill }) => ({
+      _tag: "PricedOrder",
+      ...validatedOrder,
+      lines,
+      amountToBill,
+    }))
+  );
 
 // // ---------------------------
 // // AcknowledgeOrder step
