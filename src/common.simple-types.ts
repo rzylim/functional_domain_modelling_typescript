@@ -22,10 +22,7 @@ export const String50 = {
   // Return None if input is null, empty.
   // Return error if length > maxLen
   // Return Some if the input is valid
-  createOption: (
-    fieldName: string,
-    str: string
-  ): E.Either<string, O.Option<String50>> =>
+  createOption: (fieldName: string, str: string) =>
     ConstrainedType.createStringOption(fieldName, constructString50, 50, str),
 };
 // not using class as constructor cannot be protected
@@ -170,6 +167,17 @@ export const GizmoCode = {
     ConstrainedType.createLike(fieldName, constructGizmoCode, /^G\d{3}$/, code),
 };
 
+export class ProductCodeError extends Error {
+  _tag = "ProductCodeError";
+  name = "ProductCodeError";
+  fieldName: string;
+
+  constructor(fieldName: string, message: string) {
+    super(message);
+    this.fieldName = fieldName;
+  }
+}
+
 // A ProductCode is E.either a Widget or a Gizmo
 export type ProductCode = WidgetCode | GizmoCode;
 export const ProductCode = {
@@ -184,11 +192,25 @@ export const ProductCode = {
   },
   // Create an ProductCode from a string
   // Return Error if input is null, empty, or not matching pattern
-  create: (fieldName: string, code: string) => {
-    if (!code) return E.left(`${fieldName} must not be null or empty`);
+  create: (
+    fieldName: string,
+    code: string
+  ): E.Either<ConstrainedTypeError | ProductCodeError, ProductCode> => {
+    if (!code)
+      return E.left(
+        new ProductCodeError(
+          fieldName,
+          `${fieldName} must not be null or empty`
+        )
+      );
     if (code.startsWith("W")) return WidgetCode.create(fieldName, code);
     if (code.startsWith("G")) return GizmoCode.create(fieldName, code);
-    return E.left(`${fieldName}: format not regonised '${code}'`);
+    return E.left(
+      new ProductCodeError(
+        fieldName,
+        `${fieldName}: format not regonised '${code}'`
+      )
+    );
   },
 };
 
@@ -249,7 +271,11 @@ export const OrderQuantity = {
     }
   },
   // Create a OrderQuantity from a productCode and quantity
-  create: (fieldName: string, productCode: ProductCode, quantity: number) => {
+  create: (
+    fieldName: string,
+    productCode: ProductCode,
+    quantity: number
+  ): E.Either<ConstrainedTypeError, OrderQuantity> => {
     switch (productCode._tag) {
       case "WidgetCode":
         return UnitQuantity.create(fieldName, quantity);
@@ -266,7 +292,7 @@ export type Price = {
   _tag: "Price";
   value: number;
 };
-const constructPrice = (value: number) => ({
+const constructPrice = (value: number): Price => ({
   [validPrice]: true,
   _tag: "Price",
   value,
@@ -301,7 +327,7 @@ export type BillingAmount = {
   _tag: "BillingAmount";
   value: number;
 };
-const constructBillingAmount = (value: number) => ({
+const constructBillingAmount = (value: number): BillingAmount => ({
   [validBillingAmount]: true,
   _tag: "BillingAmount",
   value,
@@ -325,13 +351,30 @@ export const BillingAmount = {
 
 // Represents a PDF attachment
 export type PdfAttachment = {
-  Name: string;
+  name: string;
   Bytes: ArrayBuffer;
 };
 
 // ===============================
 // Reusable constructors and getters for constrained types
 // ===============================
+
+// export type ConstrainedTypeError = {
+//   _tag: "ConstrainedTypeError";
+//   fieldName: string;
+//   errorDescription: string;
+// };
+
+export class ConstrainedTypeError extends Error {
+  _tag = "ConstrainedTypeError";
+  name = "ConstrainedTypeError";
+  fieldName: string;
+
+  constructor(fieldName: string, message: string) {
+    super(message);
+    this.fieldName = fieldName;
+  }
+}
 
 /// Useful functions for constrained types
 const ConstrainedType = {
@@ -342,10 +385,21 @@ const ConstrainedType = {
     constructor: (...args: any) => T,
     maxLen: number,
     str: string
-  ): E.Either<string, T> => {
-    if (!str) return E.left(`${fieldName} must not be null or empty`);
+  ): E.Either<ConstrainedTypeError, T> => {
+    if (!str)
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be null or empty`
+        )
+      );
     if (str.length > maxLen)
-      return E.left(`${fieldName} must not be more than ${maxLen} chars`);
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be more than ${maxLen} chars`
+        )
+      );
     return E.right(constructor(str));
   },
   // createString, for use with classes. testing.
@@ -353,10 +407,21 @@ const ConstrainedType = {
     fieldName: string,
     maxLen: number,
     str: string
-  ): E.Either<string, string> => {
-    if (!str) return E.left(`${fieldName} must not be null or empty`);
+  ): E.Either<ConstrainedTypeError, string> => {
+    if (!str)
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be null or empty`
+        )
+      );
     if (str.length > maxLen)
-      return E.left(`${fieldName} must not be more than ${maxLen} chars`);
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be more than ${maxLen} chars`
+        )
+      );
     return E.right(str);
   },
   // Create a optional constrained string using the constructor provided
@@ -368,10 +433,15 @@ const ConstrainedType = {
     constructor: (...args: any) => T,
     maxLen: number,
     str: string
-  ): E.Either<string, O.Option<T>> => {
+  ): E.Either<ConstrainedTypeError, O.Option<T>> => {
     if (!str) return E.right(O.none);
     if (str.length > maxLen)
-      return E.left(`${fieldName} must not be more than ${maxLen} chars`);
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be more than ${maxLen} chars`
+        )
+      );
     return E.right(O.some(constructor(str)));
   },
   /// Create a constrained integer using the constructor provided
@@ -382,12 +452,25 @@ const ConstrainedType = {
     minVal: number,
     maxVal: number,
     i: number
-  ): E.Either<string, T> => {
-    if (!Number.isInteger(i)) return E.left(`${fieldName} must be an integer`);
+  ): E.Either<ConstrainedTypeError, T> => {
+    if (!Number.isInteger(i))
+      return E.left(
+        new ConstrainedTypeError(fieldName, `${fieldName} must be an integer`)
+      );
     if (i < minVal)
-      return E.left(`${fieldName} must not be less than ${minVal}`);
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be less than ${minVal}`
+        )
+      );
     if (i > minVal)
-      return E.left(`${fieldName} must not be more than ${maxVal}`);
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be more than ${maxVal}`
+        )
+      );
     return E.right(constructor(i));
   },
   // Create a constrained decimal using the constructor provided
@@ -398,11 +481,21 @@ const ConstrainedType = {
     minVal: number,
     maxVal: number,
     i: number
-  ): E.Either<string, T> => {
+  ): E.Either<ConstrainedTypeError, T> => {
     if (i < minVal)
-      return E.left(`${fieldName} must not be less than ${minVal}`);
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be less than ${minVal}`
+        )
+      );
     if (i > minVal)
-      return E.left(`${fieldName} must not be more than ${maxVal}`);
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be more than ${maxVal}`
+        )
+      );
     return E.right(constructor(i));
   },
   // Create a constrained string using the constructor provided
@@ -412,9 +505,20 @@ const ConstrainedType = {
     constructor: (...args: any) => T,
     pattern: RegExp,
     str: string
-  ): E.Either<string, T> => {
-    if (!str) return E.left(`${fieldName} must not be null or empty`);
+  ): E.Either<ConstrainedTypeError, T> => {
+    if (!str)
+      return E.left(
+        new ConstrainedTypeError(
+          fieldName,
+          `${fieldName} must not be null or empty`
+        )
+      );
     if (pattern.test(str)) return E.right(constructor(str));
-    return E.left(`${fieldName}: '${str}' must match the pattern '${pattern}'`);
+    return E.left(
+      new ConstrainedTypeError(
+        fieldName,
+        `${fieldName}: '${str}' must match the pattern '${pattern}'`
+      )
+    );
   },
 };

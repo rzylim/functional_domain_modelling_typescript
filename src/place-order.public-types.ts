@@ -14,6 +14,8 @@ import {
   OrderQuantity,
   Price,
   ProductCode,
+  ConstrainedTypeError,
+  ProductCodeError,
 } from "./common.simple-types";
 
 // ------------------------------------
@@ -103,7 +105,26 @@ export type PlaceOrderEvent =
 // error outputs
 
 /// All the things that can go wrong in this workflow
-export type ValidationError = { _tag: "ValidationError"; value: string };
+export class ValidationError extends Error {
+  _tag = "ValidationError";
+  name = "ValidationError";
+  fieldName: string;
+
+  constructor(fieldName: string, message: string) {
+    super(message);
+    this.fieldName = fieldName;
+  }
+
+  static fromOtherErrors({
+    fieldName,
+    message,
+    stack,
+  }: ConstrainedTypeError | ProductCodeError) {
+    const err = new ValidationError(fieldName, message);
+    err.stack = stack;
+    return err;
+  }
+}
 
 export type PricingError = { _tag: "PricingError"; value: string };
 
