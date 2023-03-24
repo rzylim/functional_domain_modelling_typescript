@@ -16,14 +16,14 @@ import { EmailAddress, String50, ZipCode } from "./common.simple-types";
 
 export type PersonalName = {
   _tag: "PersonalName";
-  FirstName: String50;
-  LastName: String50;
+  firstName: String50;
+  lastName: String50;
 };
 
 export type CustomerInfo = {
   _tag: "CustomerInfo";
-  Name: PersonalName;
-  EmailAddress: EmailAddress;
+  name: PersonalName;
+  emailAddress: EmailAddress;
 };
 
 // ==================================
@@ -32,12 +32,12 @@ export type CustomerInfo = {
 
 export type Address = {
   _tag: "Address";
-  AddressLine1: String50;
-  AddressLine2: O.Option<String50>;
-  AddressLine3: O.Option<String50>;
-  AddressLine4: O.Option<String50>;
-  City: String50;
-  ZipCode: ZipCode;
+  addressLine1: String50;
+  addressLine2: O.Option<String50>;
+  addressLine3: O.Option<String50>;
+  addressLine4: O.Option<String50>;
+  city: String50;
+  zipCode: ZipCode;
 };
 
 // ==================================

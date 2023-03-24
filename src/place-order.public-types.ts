@@ -23,32 +23,32 @@ import {
 // since any such construction will do
 // for unvalidated data.
 export type UnvalidatedCustomerInfo = {
-  FirstName: string;
-  LastName: string;
-  EmailAddress: string;
+  firstName: string;
+  lastName: string;
+  emailAddress: string;
 };
 
 export type UnvalidatedAddress = {
-  AddressLine1: string;
-  AddressLine2: string;
-  AddressLine3: string;
-  AddressLine4: string;
-  City: string;
-  ZipCode: string;
+  addressLine1: string;
+  addressLine2: string;
+  addressLine3: string;
+  addressLine4: string;
+  city: string;
+  zipCode: string;
 };
 
 export type UnvalidatedOrderLine = {
-  OrderLineId: string;
-  ProductCode: string;
-  Quantity: number;
+  orderLineId: string;
+  productCode: string;
+  quantity: number;
 };
 
 export type UnvalidatedOrder = {
-  OrderId: string;
-  CustomerInfo: UnvalidatedCustomerInfo;
-  ShippingAddress: UnvalidatedAddress;
-  BillingAddress: UnvalidatedAddress;
-  Lines: UnvalidatedOrderLine[];
+  orderId: string;
+  customerInfo: UnvalidatedCustomerInfo;
+  shippingAddress: UnvalidatedAddress;
+  billingAddress: UnvalidatedAddress;
+  lines: UnvalidatedOrderLine[];
 };
 
 // ------------------------------------
@@ -57,27 +57,27 @@ export type UnvalidatedOrder = {
 // Event will be created if the Acknowledgment was successfully posted
 export type OrderAcknowledgmentSent = {
   _tag: "OrderAcknowledgementSent";
-  OrderId: OrderId;
-  EmailAddress: EmailAddress;
+  orderId: OrderId;
+  emailAddress: EmailAddress;
 };
 
 // priced state
 export type PricedOrderLine = {
   _tag: "PricedOrderLine";
-  OrderLineId: OrderLineId;
-  ProductCode: ProductCode;
-  Quantity: OrderQuantity;
-  LinePrice: Price;
+  orderLineId: OrderLineId;
+  productCode: ProductCode;
+  quantity: OrderQuantity;
+  linePrice: Price;
 };
 
 export type PricedOrder = {
   _tag: "PricedOrder";
-  OrderId: OrderId;
-  CustomerInfo: CustomerInfo;
-  ShippingAddress: Address;
-  BillingAddress: Address;
-  AmountToBill: BillingAmount;
-  Lines: PricedOrderLine[];
+  orderId: OrderId;
+  customerInfo: CustomerInfo;
+  shippingAddress: Address;
+  billingAddress: Address;
+  amountToBill: BillingAmount;
+  lines: PricedOrderLine[];
 };
 
 /// Event to send to shipping context
@@ -87,9 +87,9 @@ export type OrderPlaced = PricedOrder;
 /// Will only be created if the AmountToBill is not zero
 export type BillableOrderPlaced = {
   _tag: "BillableOrderPlaced";
-  OrderId: OrderId;
-  BillingAddress: Address;
-  AmountToBill: BillingAmount;
+  orderId: OrderId;
+  billingAddress: Address;
+  amountToBill: BillingAmount;
 };
 
 /// The possible events resulting from the PlaceOrder workflow
@@ -109,16 +109,16 @@ export type PricingError = { _tag: "PricingError"; value: string };
 
 export type ServiceInfo = {
   _tag: "ServiceInfo";
-  Name: string;
-  Endpoint: string;
-  // Endpoint: System.Uri
+  name: string;
+  endpoint: string;
+  // endpoint: System.Uri
 };
 
 export type RemoteServiceError = {
   _tag: "RemoteServiceError";
-  Service: ServiceInfo;
-  Exception: Error;
-  // Exception : System.Exception
+  service: ServiceInfo;
+  exception: Error;
+  // exception : System.Exception
 };
 
 export type PlaceOrderError =
