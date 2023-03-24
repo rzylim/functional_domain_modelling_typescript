@@ -399,29 +399,34 @@ export const priceOrder: PriceOrder = (getProductPrice) => (validatedOrder) =>
     }))
   );
 
-// // ---------------------------
-// // AcknowledgeOrder step
-// // ---------------------------
+// ---------------------------
+// AcknowledgeOrder step
+// ---------------------------
 
-// let acknowledgeOrder : AcknowledgeOrder =
-//     fun createAcknowledgmentLetter sendAcknowledgment pricedOrder ->
-//         let letter = createAcknowledgmentLetter pricedOrder
-//         let acknowledgment = {
-//             EmailAddress = pricedOrder.CustomerInfo.EmailAddress
-//             Letter = letter
-//             }
+export const acknowledgeOrder: AcknowledgeOrder =
+  (createOrderAcknowledgmentLetter) =>
+  (sendOrderAcknowledgement) =>
+  (pricedOrder) => {
+    const letter = createOrderAcknowledgmentLetter(pricedOrder);
+    const acknowledgement: OrderAcknowledgment = {
+      _tag: "OrderAcknowledgement",
+      emailAddress: pricedOrder.customerInfo.emailAddress,
+      letter,
+    };
 
-//         // if the acknowledgement was successfully sent,
-//         // return the corresponding event, else return None
-//         match sendAcknowledgment acknowledgment with
-//         | Sent ->
-//             let event = {
-//                 OrderId = pricedOrder.OrderId
-//                 EmailAddress = pricedOrder.CustomerInfo.EmailAddress
-//                 }
-//             Some event
-//         | NotSent ->
-//             None
+    // if the acknowledgement was successfully sent,
+    // return the corresponding event, else return None
+    switch (sendOrderAcknowledgement(acknowledgement)) {
+      case "Sent":
+        return O.some({
+          _tag: "OrderAcknowledgementSent",
+          orderId: pricedOrder.orderId,
+          emailAddress: pricedOrder.customerInfo.emailAddress,
+        });
+      case "NotSent":
+        return O.none;
+    }
+  };
 
 // // ---------------------------
 // // Create events
