@@ -126,7 +126,22 @@ export class ValidationError extends Error {
   }
 }
 
-export type PricingError = { _tag: "PricingError"; value: string };
+export class PricingError extends Error {
+  _tag = "PricingError";
+  name = "PricingError";
+  fieldName: string;
+
+  constructor(fieldName: string, message: string) {
+    super(message);
+    this.fieldName = fieldName;
+  }
+
+  static fromOtherErrors({ fieldName, message, stack }: ConstrainedTypeError) {
+    const err = new ValidationError(fieldName, message);
+    err.stack = stack;
+    return err;
+  }
+}
 
 export type ServiceInfo = {
   _tag: "ServiceInfo";

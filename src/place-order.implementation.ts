@@ -16,6 +16,7 @@ import * as TE from "fp-ts/TaskEither";
 import * as A from "fp-ts/Array";
 
 import {
+  BillingAmount,
   EmailAddress,
   OrderId,
   OrderLineId,
@@ -29,8 +30,10 @@ import { Address, CustomerInfo } from "./common.compound-types";
 
 import {
   OrderAcknowledgmentSent,
+  PlaceOrderError,
   PlaceOrderEvent,
   PricedOrder,
+  PricedOrderLine,
   PricingError,
   UnvalidatedAddress,
   UnvalidatedCustomerInfo,
@@ -38,7 +41,7 @@ import {
   UnvalidatedOrderLine,
   ValidationError,
 } from "./place-order.public-types";
-import { checkProductExists } from "./place-order.api";
+import { checkProductExists, getProductPrice } from "./place-order.api";
 import { identity } from "fp-ts";
 
 // ======================================================
@@ -358,48 +361,52 @@ export const validateOrder =
       )
     );
 
-// // ---------------------------
-// // PriceOrder step
-// // ---------------------------
+// ---------------------------
+// PriceOrder step
+// ---------------------------
 
-// let toPricedOrderLine (getProductPrice:GetProductPrice) (validatedOrderLine:ValidatedOrderLine) =
-//     result {
-//         let qty = validatedOrderLine.Quantity |> OrderQuantity.value
-//         let price = validatedOrderLine.ProductCode |> getProductPrice
-//         let! linePrice =
-//             Price.multiply qty price
-//             |> Result.mapError PricingError // convert to PlaceOrderError
-//         let pricedLine : PricedOrderLine = {
-//             OrderLineId = validatedOrderLine.OrderLineId
-//             ProductCode = validatedOrderLine.ProductCode
-//             Quantity = validatedOrderLine.Quantity
-//             LinePrice = linePrice
-//             }
-//         return pricedLine
-//     }
+export const toPricedOrderLine =
+  (getProductPrice: GetProductPrice) =>
+  (
+    validatedOrderLine: ValidatedOrderLine
+  ): E.Either<ValidationError, PricedOrderLine> => {
+    const price = getProductPrice(validatedOrderLine.productCode);
+    return pipe(
+      Price.multiply(validatedOrderLine.quantity.value, price),
+      E.mapLeft(ValidationError.fromOtherErrors),
+      E.map((linePrice) => ({
+        ...validatedOrderLine,
+        _tag: "PricedOrderLine",
+        linePrice,
+      }))
+    );
+  };
 
-// let priceOrder : PriceOrder =
-//     fun getProductPrice validatedOrder ->
-//         result {
-//             let! lines =
-//                 validatedOrder.Lines
-//                 |> List.map (toPricedOrderLine getProductPrice)
-//                 |> Result.sequence // convert list of Results to a single Result
-//             let! amountToBill =
-//                 lines
-//                 |> List.map (fun line -> line.LinePrice)  // get each line price
-//                 |> BillingAmount.sumPrices                // add them together as a BillingAmount
-//                 |> Result.mapError PricingError           // convert to PlaceOrderError
-//             let pricedOrder : PricedOrder = {
-//                 OrderId  = validatedOrder.OrderId
-//                 CustomerInfo = validatedOrder.CustomerInfo
-//                 ShippingAddress = validatedOrder.ShippingAddress
-//                 BillingAddress = validatedOrder.BillingAddress
-//                 Lines = lines
-//                 AmountToBill = amountToBill
-//             }
-//             return pricedOrder
-//         }
+export const priceOrder =
+  (getProductPrice: GetProductPrice) =>
+  (validatedOrder: ValidatedOrder): E.Either<PlaceOrderError, PricedOrder> =>
+    pipe(
+      E.Do,
+      E.bind("lines", () =>
+        pipe(
+          validatedOrder.lines.map(toPricedOrderLine(getProductPrice)),
+          A.sequence(E.Applicative) // convert list of Results to a single Result
+        )
+      ),
+      E.bind("amountToBill", ({ lines }) =>
+        pipe(
+          lines.map(({ linePrice }) => linePrice), // get each line price
+          BillingAmount.sumPrices, // add them together as a BillingAmount
+          E.mapLeft(PricingError.fromOtherErrors) // convert to PlaceOrderError
+        )
+      ),
+      E.map(({ lines, amountToBill }) => ({
+        _tag: "PricedOrder",
+        ...validatedOrder,
+        lines,
+        amountToBill,
+      }))
+    );
 
 // // ---------------------------
 // // AcknowledgeOrder step
