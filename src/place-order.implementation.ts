@@ -29,7 +29,9 @@ import {
 import { Address, CustomerInfo } from "./common.compound-types";
 
 import {
+  BillableOrderPlaced,
   OrderAcknowledgmentSent,
+  OrderPlaced,
   PlaceOrderEvent,
   PricedOrder,
   PricedOrderLine,
@@ -428,53 +430,42 @@ export const acknowledgeOrder: AcknowledgeOrder =
     }
   };
 
-// // ---------------------------
-// // Create events
-// // ---------------------------
+// ---------------------------
+// Create events
+// ---------------------------
 
-// let createOrderPlacedEvent (placedOrder:PricedOrder) : OrderPlaced =
-//     placedOrder
+export const createOrderPlacedEvent = (placedOrder: PricedOrder): OrderPlaced =>
+  placedOrder;
 
-// let createBillingEvent (placedOrder:PricedOrder) : BillableOrderPlaced option =
-//     let billingAmount = placedOrder.AmountToBill |> BillingAmount.value
-//     if billingAmount > 0M then
-//         {
-//         OrderId = placedOrder.OrderId
-//         BillingAddress = placedOrder.BillingAddress
-//         AmountToBill = placedOrder.AmountToBill
-//         } |> Some
-//     else
-//         None
+export const createBillingEvent = ({
+  amountToBill,
+  orderId,
+  billingAddress,
+}: PricedOrder): O.Option<BillableOrderPlaced> =>
+  amountToBill.value > 0
+    ? O.some({
+        _tag: "BillableOrderPlaced",
+        orderId,
+        amountToBill,
+        billingAddress,
+      })
+    : O.none;
 
-// /// helper to convert an Option into a List
-// let listOfOption opt =
-//     match opt with
-//     | Some x -> [x]
-//     | None -> []
+// helper to convert an Option into a List
+export const listOfOption = <T>(opt: O.Option<T>) =>
+  O.match(
+    () => [], // none
+    (val: T) => [val] // some
+  )(opt);
 
-// let createEvents : CreateEvents =
-//     fun pricedOrder acknowledgmentEventOpt ->
-//         let acknowledgmentEvents =
-//             acknowledgmentEventOpt
-//             |> Option.map PlaceOrderEvent.AcknowledgmentSent
-//             |> listOfOption
-//         let orderPlacedEvents =
-//             pricedOrder
-//             |> createOrderPlacedEvent
-//             |> PlaceOrderEvent.OrderPlaced
-//             |> List.singleton
-//         let billingEvents =
-//             pricedOrder
-//             |> createBillingEvent
-//             |> Option.map PlaceOrderEvent.BillableOrderPlaced
-//             |> listOfOption
+export const createEvents: CreateEvents =
+  (pricedOrder) => (acknowledgmentEventOpt) => {
+    const acknowledgmentEvents = listOfOption(acknowledgmentEventOpt);
+    const orderPlacedEvent = createOrderPlacedEvent(pricedOrder);
+    const billingEvents = listOfOption(createBillingEvent(pricedOrder));
 
-//         // return all the events
-//         [
-//         yield! acknowledgmentEvents
-//         yield! orderPlacedEvents
-//         yield! billingEvents
-//         ]
+    return [...acknowledgmentEvents, orderPlacedEvent, ...billingEvents];
+  };
 
 // // ---------------------------
 // // overall workflow
