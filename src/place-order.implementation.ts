@@ -32,6 +32,7 @@ import {
   BillableOrderPlaced,
   OrderAcknowledgmentSent,
   OrderPlaced,
+  PlaceOrder,
   PlaceOrderEvent,
   PricedOrder,
   PricedOrderLine,
@@ -459,38 +460,41 @@ export const listOfOption = <T>(opt: O.Option<T>) =>
   )(opt);
 
 export const createEvents: CreateEvents =
-  (pricedOrder) => (acknowledgmentEventOpt) => {
-    const acknowledgmentEvents = listOfOption(acknowledgmentEventOpt);
+  (pricedOrder) => (acknowledgemententEventOpt) => {
+    const acknowledgemententEvents = listOfOption(acknowledgemententEventOpt);
     const orderPlacedEvent = createOrderPlacedEvent(pricedOrder);
     const billingEvents = listOfOption(createBillingEvent(pricedOrder));
 
-    return [...acknowledgmentEvents, orderPlacedEvent, ...billingEvents];
+    return [...acknowledgemententEvents, orderPlacedEvent, ...billingEvents];
   };
 
-// // ---------------------------
-// // overall workflow
-// // ---------------------------
+// ---------------------------
+// overall workflow
+// ---------------------------
 
-// let placeOrder
-//     checkProductExists // dependency
-//     checkAddressExists // dependency
-//     getProductPrice    // dependency
-//     createOrderAcknowledgmentLetter  // dependency
-//     sendOrderAcknowledgment // dependency
-//     : PlaceOrder =       // definition of function
-
-//     fun unvalidatedOrder ->
-//         asyncResult {
-//             let! validatedOrder =
-//                 validateOrder checkProductExists checkAddressExists unvalidatedOrder
-//                 |> AsyncResult.mapError PlaceOrderError.Validation
-//             let! pricedOrder =
-//                 priceOrder getProductPrice validatedOrder
-//                 |> AsyncResult.ofResult
-//                 |> AsyncResult.mapError PlaceOrderError.Pricing
-//             let acknowledgementOption =
-//                 acknowledgeOrder createOrderAcknowledgmentLetter sendOrderAcknowledgment pricedOrder
-//             let events =
-//                 createEvents pricedOrder acknowledgementOption
-//             return events
-//         }
+export const placeOrder =
+  (checkProductExists: CheckProductCodeExists) =>
+  (checkAddressExists: CheckAddressExists) =>
+  (getProductPrice: GetProductPrice) =>
+  (createOrderAcknowledgmentLetter: CreateOrderAcknowledgmentLetter) =>
+  (sendOrderAcknowledgment: SendOrderAcknowledgment): PlaceOrder =>
+  (unvalidatedOrder) =>
+    pipe(
+      TE.Do,
+      TE.bind("validatedOrder", () =>
+        validateOrder(checkProductExists)(checkAddressExists)(unvalidatedOrder)
+      ),
+      TE.bind("pricedOrder", ({ validatedOrder }) =>
+        TE.fromEither(priceOrder(getProductPrice)(validatedOrder))
+      ),
+      TE.bind("acknowledgementOption", ({ pricedOrder }) =>
+        TE.of(
+          acknowledgeOrder(createOrderAcknowledgmentLetter)(
+            sendOrderAcknowledgment
+          )(pricedOrder)
+        )
+      ),
+      TE.map(({ pricedOrder, acknowledgementOption }) =>
+        createEvents(pricedOrder)(acknowledgementOption)
+      )
+    );

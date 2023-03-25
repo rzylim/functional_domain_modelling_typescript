@@ -167,4 +167,4 @@ export type PlaceOrderError =
 
 export type PlaceOrder = (
   order: UnvalidatedOrder
-) => TE.TaskEither<PlaceOrderEvent[], PlaceOrderError>;
+) => TE.TaskEither<PlaceOrderError, PlaceOrderEvent[]>;
