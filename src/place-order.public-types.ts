@@ -150,12 +150,26 @@ export type ServiceInfo = {
   // endpoint: System.Uri
 };
 
-export type RemoteServiceError = {
-  _tag: "RemoteServiceError";
+export class RemoteServiceError extends Error {
+  _tag = "RemoteServiceError";
+  name = "RemoteServiceError";
+  fieldName: string;
   service: ServiceInfo;
   exception: Error;
   // exception : System.Exception
-};
+
+  constructor(
+    fieldName: string,
+    message: string,
+    service: ServiceInfo,
+    exception: Error
+  ) {
+    super(message);
+    this.fieldName = fieldName;
+    this.service = service;
+    this.exception = exception;
+  }
+}
 
 export type PlaceOrderError =
   | ValidationError
