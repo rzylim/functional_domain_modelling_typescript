@@ -6,31 +6,40 @@
 // 3) The output is turned into a DTO which is turned into a HttpResponse
 // ======================================================
 
+import * as E from "fp-ts/Either";
 import * as T from "fp-ts/Task";
 import * as TE from "fp-ts/TaskEither";
 
 import { Price } from "./common.simple-types";
+import { PlaceOrderError, PlaceOrderEvent } from "./place-order.public-types";
 import {
   CheckAddressExists,
   CheckProductCodeExists,
   CreateOrderAcknowledgmentLetter,
   GetProductPrice,
+  placeOrder,
   SendOrderAcknowledgment,
 } from "./place-order.implementation";
+import {
+  OrderFormDto,
+  placeOrderErrorDtoFromDomain,
+  placeOrderEventDtoFromDomain,
+  toUnvalidatedOrder,
+} from "./place-order.dto";
 
 export type JsonString = string;
 
 // Very simplified version!
 export type HttpRequest = {
-  Action: string;
-  Uri: string;
-  Body: JsonString;
+  action: string;
+  uri: string;
+  body: JsonString;
 };
 
 // Very simplified version!
 export type HttpResponse = {
-  HttpStatusCode: number;
-  Body: JsonString;
+  httpStatusCode: number;
+  body: JsonString;
 };
 
 // An API takes a HttpRequest as input and returns a async response
@@ -71,57 +80,37 @@ export const sendOrderAcknowledgment: SendOrderAcknowledgment = (
 // workflow
 // -------------------------------
 
-/// This function converts the workflow output into a HttpResponse
-// let workflowResultToHttpReponse result =
-//     match result with
-//     | Ok events ->
-//         // turn domain events into dtos
-//         let dtos =
-//             events
-//             |> List.map PlaceOrderEventDto.fromDomain
-//             |> List.toArray // arrays are json friendly
-//         // and serialize to JSON
-//         let json = serializeJson(dtos)
-//         let response =
-//             {
-//             HttpStatusCode = 200
-//             Body = json
-//             }
-//         response
-//     | Error err ->
-//         // turn domain errors into a dto
-//         let dto = err |> PlaceOrderErrorDto.fromDomain
-//         // and serialize to JSON
-//         let json = serializeJson(dto )
-//         let response =
-//             {
-//             HttpStatusCode = 401
-//             Body = json
-//             }
-//         response
+// This function converts the workflow output into a HttpResponse
+export const workflowResultToHttpReponse = (
+  result: E.Either<PlaceOrderError, PlaceOrderEvent[]>
+): { httpStatusCode: number; body: JsonString } =>
+  E.match(
+    (placeOrderError: PlaceOrderError) => ({
+      httpStatusCode: 401,
+      body: JSON.stringify(placeOrderErrorDtoFromDomain(placeOrderError)),
+    }),
+    (events: PlaceOrderEvent[]) => ({
+      httpStatusCode: 200,
+      body: events.map(placeOrderEventDtoFromDomain).toString(),
+    })
+  )(result);
 
-// let placeOrderApi : PlaceOrderApi =
-//     fun request ->
-//         // following the approach in "A Complete Serialization Pipeline" in chapter 11
+export const placeOrderApi: PlaceOrderApi = (request) => {
+  // following the approach in "A Complete Serialization Pipeline" in chapter 11
+  // start with a string
+  const orderFormJson = request.body;
+  const orderForm: OrderFormDto = JSON.parse(orderFormJson);
+  // convert to domain object
+  const unvalidatedOrder = toUnvalidatedOrder(orderForm);
 
-//         // start with a string
-//         let orderFormJson = request.Body
-//         let orderForm = deserializeJson<OrderFormDto>(orderFormJson)
-//         // convert to domain object
-//         let unvalidatedOrder = orderForm |> OrderFormDto.toUnvalidatedOrder
+  // setup the dependencies. See "Injecting Dependencies" in chapter 9
+  const workflow = placeOrder(checkProductExists)(checkAddressExists)(
+    getProductPrice
+  )(createOrderAcknowledgmentLetter)(sendOrderAcknowledgment);
 
-//         // setup the dependencies. See "Injecting Dependencies" in chapter 9
-//         let workflow =
-//             Implementation.placeOrder
-//                 checkProductExists // dependency
-//                 checkAddressExists // dependency
-//                 getProductPrice    // dependency
-//                 createOrderAcknowledgmentLetter  // dependency
-//                 sendOrderAcknowledgment // dependency
+  // now we are in the pure domain
+  const asyncResult = workflow(unvalidatedOrder);
 
-//         // now we are in the pure domain
-//         let asyncResult = workflow unvalidatedOrder
-
-//         // now convert from the pure domain back to a HttpResponse
-//         asyncResult
-//         |> Async.map (workflowResultToHttpReponse)
+  // now convert from the pure domain back to a HttpResponse
+  return T.map(workflowResultToHttpReponse)(asyncResult);
+};
