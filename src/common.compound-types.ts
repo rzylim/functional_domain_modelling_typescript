@@ -8,7 +8,13 @@
 
 import * as O from "fp-ts/Option";
 
-import { EmailAddress, String50, ZipCode } from "./common.simple-types";
+import {
+  EmailAddress,
+  String50,
+  UsStateCode,
+  VipStatus,
+  ZipCode,
+} from "./common.simple-types";
 
 // ==================================
 // Customer-related types
@@ -24,6 +30,7 @@ export type CustomerInfo = {
   _tag: "CustomerInfo";
   name: PersonalName;
   emailAddress: EmailAddress;
+  vipStatus: VipStatus;
 };
 
 // ==================================
@@ -38,6 +45,8 @@ export type Address = {
   addressLine4: O.Option<String50>;
   city: String50;
   zipCode: ZipCode;
+  state: UsStateCode;
+  country: String50;
 };
 
 // ==================================

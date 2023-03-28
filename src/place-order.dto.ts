@@ -13,17 +13,26 @@ import * as O from "fp-ts/Option";
 import * as E from "fp-ts/Either";
 import { JsonRecord } from "fp-ts/lib/Json";
 
-import { EmailAddress, String50, ZipCode } from "./common.simple-types";
+import {
+  EmailAddress,
+  PdfAttachment,
+  String50,
+  UsStateCode,
+  VipStatus,
+  ZipCode,
+} from "./common.simple-types";
 import { Address, CustomerInfo } from "./common.compound-types";
+
+import { PricedOrderLine } from "./place-order.internal-types";
 import {
   BillableOrderPlaced,
   OrderAcknowledgmentSent,
-  OrderPlaced,
   PlaceOrderError,
   PlaceOrderEvent,
-  PricedOrderLine,
   PricingError,
   RemoteServiceError,
+  ShippableOrderLine,
+  ShippableOrderPlaced,
   UnvalidatedAddress,
   UnvalidatedCustomerInfo,
   UnvalidatedOrder,
@@ -53,6 +62,7 @@ export type CustomerInfoDto = {
   firstName: string;
   lastName: string;
   emailAddress: string;
+  vipStatus: string;
 };
 
 // Functions for converting between the DTO and corresponding domain object
@@ -64,12 +74,14 @@ export const toUnvalidatedCustomerInfo = ({
   firstName,
   lastName,
   emailAddress,
+  vipStatus,
 }: CustomerInfoDto): UnvalidatedCustomerInfo => ({
   // sometimes it's helpful to use an explicit type annotation
   // to avoid ambiguity between records with the same field names.
   firstName,
   lastName,
   emailAddress,
+  vipStatus,
 });
 
 // Convert the DTO into a CustomerInfo object
@@ -97,10 +109,17 @@ export const toCustomerInfo = (
         E.mapLeft(ValidationError.fromOtherErrors)
       )
     ),
-    E.map(({ firstName, lastName, emailAddress }) => ({
+    E.bind("vipStatus", () =>
+      pipe(
+        VipStatus.create("VipStatus", dto.vipStatus),
+        E.mapLeft(ValidationError.fromOtherErrors)
+      )
+    ),
+    E.map(({ firstName, lastName, emailAddress, vipStatus }) => ({
       _tag: "CustomerInfo",
       name: { _tag: "PersonalName", firstName, lastName },
       emailAddress,
+      vipStatus,
     }))
   );
 
@@ -110,6 +129,7 @@ export const fromCustomerInfo = (domainObj: CustomerInfo): CustomerInfoDto => ({
   firstName: domainObj.name.firstName.value,
   lastName: domainObj.name.lastName.value,
   emailAddress: domainObj.emailAddress.value,
+  vipStatus: domainObj.vipStatus,
 });
 
 //===============================================
@@ -123,6 +143,8 @@ export type AddressDto = {
   addressLine4: string;
   city: string;
   zipCode: string;
+  state: string;
+  country: string;
 };
 
 /// Functions for converting between the DTO and corresponding domain object
@@ -137,6 +159,8 @@ export const toUnvalidatedAddress = ({
   addressLine4,
   city,
   zipCode,
+  state,
+  country,
 }: AddressDto): UnvalidatedAddress => ({
   // this is a simple 1:1 copy
   addressLine1,
@@ -145,6 +169,8 @@ export const toUnvalidatedAddress = ({
   addressLine4,
   city,
   zipCode,
+  state,
+  country,
 });
 
 // Convert the DTO into a Address object
@@ -190,6 +216,18 @@ export const toAddress = (
         E.mapLeft(ValidationError.fromOtherErrors)
       )
     ),
+    E.bind("state", () =>
+      pipe(
+        UsStateCode.create("UsStateCode", dto.state),
+        E.mapLeft(ValidationError.fromOtherErrors)
+      )
+    ),
+    E.bind("country", () =>
+      pipe(
+        String50.create("Country", dto.country),
+        E.mapLeft(ValidationError.fromOtherErrors)
+      )
+    ),
     E.map((data) => ({
       _tag: "Address",
       ...data,
@@ -214,6 +252,8 @@ export const fromAddress = (domainObj: Address): AddressDto => ({
   )(domainObj.addressLine2),
   city: domainObj.city.value,
   zipCode: domainObj.zipCode.value,
+  state: domainObj.state.value,
+  country: domainObj.country.value,
 });
 
 //===============================================
@@ -248,24 +288,52 @@ export const toUnvalidatedOrderLine = ({
 //===============================================
 
 // Used in the output of the workflow
-export type PricedOrderLineDto = {
-  orderLineId: string;
-  productCode: string;
-  quantity: number;
-  linePrice: number;
-};
+export type PricedOrderLineDto =
+  | {
+      orderLineId: string;
+      productCode: string;
+      quantity: number;
+      linePrice: number;
+      comment: string;
+    }
+  | {
+      orderLineId: null;
+      productCode: null;
+      quantity: number;
+      linePrice: number;
+      comment: string;
+    };
 
 // Convert a PricedOrderLine object into the corresponding DTO.
 // Used when exporting from the domain to the outside world.
 export const pricedOrderLineDtoFromDomain = (
   domainObj: PricedOrderLine
-): PricedOrderLineDto => ({
-  // this is a simple 1:1 copy
-  orderLineId: domainObj.orderLineId.value,
-  productCode: domainObj.productCode.value,
-  quantity: domainObj.quantity.value,
-  linePrice: domainObj.linePrice.value,
-});
+): PricedOrderLineDto => {
+  // handle the comment line
+  switch (domainObj._tag) {
+    case "PricedOrderProductLine":
+      return {
+        orderLineId: domainObj.orderLineId.value,
+        productCode: domainObj.productCode.value,
+        quantity: domainObj.quantity.value,
+        linePrice: domainObj.linePrice.value,
+        comment: "",
+      };
+    case "CommentLine":
+      return {
+        orderLineId: null,
+        productCode: null,
+        quantity: 0,
+        linePrice: 0,
+        comment: domainObj.value,
+      };
+    default:
+      // should not reach here
+      throw new Error(
+        "invalid object type: unable to convert to data transfer object"
+      );
+  }
+};
 
 //===============================================
 // DTO for OrderForm
@@ -277,6 +345,7 @@ export type OrderFormDto = {
   shippingAddress: AddressDto;
   billingAddress: AddressDto;
   lines: OrderFormLineDto[];
+  promotionCode: string;
 };
 
 // Functions relating to the Order DTOs
@@ -289,33 +358,42 @@ export const toUnvalidatedOrder = (dto: OrderFormDto): UnvalidatedOrder => ({
   shippingAddress: toUnvalidatedAddress(dto.shippingAddress),
   billingAddress: toUnvalidatedAddress(dto.billingAddress),
   lines: dto.lines.map(toUnvalidatedOrderLine),
+  promotionCode: dto.promotionCode,
 });
 
 //===============================================
-// DTO for OrderPlaced event
+// DTO for ShippableOrderPlaced event
 //===============================================
 
-// Event to send to shipping context
-export type OrderPlacedDto = {
-  orderId: string;
-  customerInfo: CustomerInfoDto;
-  shippingAddress: AddressDto;
-  billingAddress: AddressDto;
-  amountToBill: number;
-  lines: PricedOrderLineDto[];
+export type ShippableOrderLineDto = {
+  productCode: string;
+  quantity: number;
 };
 
-// Convert a OrderPlaced object into the corresponding DTO.
-// Used when exporting from the domain to the outside world.
-export const orderPlacedDtoFromDomain = (
-  domainObj: OrderPlaced
-): OrderPlacedDto => ({
+// Event to send to shipping context
+export type ShippableOrderPlacedDto = {
+  orderId: string;
+  shippingAddress: AddressDto;
+  shipmentLines: ShippableOrderLineDto[];
+  pdf: PdfAttachment;
+};
+
+export const shippableOrderPlacedDtoFromShippableOrderLine = (
+  domainObj: ShippableOrderLine
+): ShippableOrderLineDto => ({
+  productCode: domainObj.productCode.value,
+  quantity: domainObj.quantity.value,
+});
+
+export const shippableOrderPlacedDtoFromDomain = (
+  domainObj: ShippableOrderPlaced
+): ShippableOrderPlacedDto => ({
   orderId: domainObj.orderId.value,
-  customerInfo: fromCustomerInfo(domainObj.customerInfo),
   shippingAddress: fromAddress(domainObj.shippingAddress),
-  billingAddress: fromAddress(domainObj.billingAddress),
-  amountToBill: domainObj.amountToBill.value,
-  lines: domainObj.lines.map(pricedOrderLineDtoFromDomain),
+  shipmentLines: domainObj.shipmentLines.map(
+    shippableOrderPlacedDtoFromShippableOrderLine
+  ),
+  pdf: domainObj.pdf,
 });
 
 //===============================================
@@ -372,8 +450,10 @@ export const placeOrderEventDtoFromDomain = (
   domainObj: PlaceOrderEvent
 ): PlaceOrderEventDto => {
   switch (domainObj._tag) {
-    case "PricedOrder": // equivalent to OrderPlaced.
-      return { orderPlaced: orderPlacedDtoFromDomain(domainObj) };
+    case "ShippableOrderPlaced":
+      return {
+        shippableOrderPlaced: shippableOrderPlacedDtoFromDomain(domainObj),
+      };
     case "BillableOrderPlaced":
       return {
         billableOrderPlaced: billableOrderPlacedDtoFromDomain(domainObj),

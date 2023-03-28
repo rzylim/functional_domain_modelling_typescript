@@ -24,139 +24,46 @@ import {
   Price,
   ProductCode,
   String50,
+  UsStateCode,
+  VipStatus,
   ZipCode,
 } from "./common.simple-types";
 import { Address, CustomerInfo } from "./common.compound-types";
 
 import {
-  BillableOrderPlaced,
-  OrderAcknowledgmentSent,
-  OrderPlaced,
-  PlaceOrder,
-  PlaceOrderEvent,
+  AcknowledgeOrder,
+  AddShippingInfoToOrder,
+  CalculateShippingCost,
+  CheckAddressExists,
+  CheckedAddress,
+  CheckProductCodeExists,
+  CreateEvents,
+  CreateOrderAcknowledgmentLetter,
+  FreeVipShipping,
+  GetPricingFunction,
+  GetProductPrice,
+  OrderAcknowledgment,
   PricedOrder,
   PricedOrderLine,
+  PricedOrderProductLine,
+  PriceOrder,
+  PricingMethod,
+  SendOrderAcknowledgment,
+  ValidatedOrderLine,
+  ValidateOrder,
+} from "./place-order.internal-types";
+import {
+  BillableOrderPlaced,
+  PlaceOrder,
   PricingError,
+  ShippableOrderLine,
+  ShippableOrderPlaced,
   UnvalidatedAddress,
   UnvalidatedCustomerInfo,
-  UnvalidatedOrder,
   UnvalidatedOrderLine,
   ValidationError,
 } from "./place-order.public-types";
-
-// ======================================================
-// Section 1 : Define each step in the workflow using types
-// ======================================================
-
-// ---------------------------
-// Validation step
-// ---------------------------
-
-// Product validation
-
-export type CheckProductCodeExists = (code: ProductCode) => boolean;
-
-// Address validation
-export type InvalidFormat = { _tag: "InvalidFormat"; value: string };
-export type AddressNotFound = { _tag: "AddressNotFound"; value: string };
-export type AddressValidationError = InvalidFormat | AddressNotFound;
-
-// KIV, supposed to be wrapped version of UnvalidatedAddress, see page 140.
-export type CheckedAddress = {
-  _tag: "CheckedAddress";
-  value: UnvalidatedAddress;
-};
-
-export type CheckAddressExists = (
-  address: UnvalidatedAddress
-) => TE.TaskEither<AddressValidationError, CheckedAddress>;
-
-// ---------------------------
-// Validated Order
-// ---------------------------
-
-export type ValidatedOrderLine = {
-  orderLineId: OrderLineId;
-  productCode: ProductCode;
-  quantity: OrderQuantity;
-};
-
-export type ValidatedOrder = {
-  orderId: OrderId;
-  customerInfo: CustomerInfo;
-  shippingAddress: Address;
-  billingAddress: Address;
-  lines: ValidatedOrderLine[];
-};
-
-export type ValidateOrder = (
-  checkProductCodeExists: CheckProductCodeExists // dependency
-) => (
-  checkAddressExists: CheckAddressExists // dependency
-) => (
-  order: UnvalidatedOrder // input
-) => TE.TaskEither<ValidationError, ValidatedOrder>; // output
-
-// ---------------------------
-// Pricing step
-// ---------------------------
-
-export type GetProductPrice = (productCode: ProductCode) => Price;
-
-// priced state is defined Domain.WorkflowTypes
-
-export type PriceOrder = (
-  getProductPrice: GetProductPrice // dependency
-) => (
-  order: ValidatedOrder // input
-) => E.Either<PricingError, PricedOrder>; // output
-
-// ---------------------------
-// Send OrderAcknowledgment
-// ---------------------------
-
-export type HtmlString = { _tag: "HtmlString"; value: string };
-
-export type OrderAcknowledgment = {
-  _tag: "OrderAcknowledgement";
-  emailAddress: EmailAddress;
-  letter: HtmlString;
-};
-
-export type CreateOrderAcknowledgmentLetter = (
-  order: PricedOrder
-) => HtmlString;
-
-// Send the order acknowledgement to the customer
-// Note that this does NOT generate an Result-type error (at least not in this workflow)
-// because on failure we will continue anyway.
-// On success, we will generate a OrderAcknowledgmentSent event,
-// but on failure we won't.
-
-// concrete types not wrapping any value.
-export type SendResult = "Sent" | "NotSent";
-
-export type SendOrderAcknowledgment = (
-  orderAcknowledgement: OrderAcknowledgment
-) => SendResult;
-
-export type AcknowledgeOrder = (
-  createOrderAcknowledgementLetter: CreateOrderAcknowledgmentLetter // dependency
-) => (
-  sendOrderAcknowledgement: SendOrderAcknowledgment // dependency
-) => (
-  order: PricedOrder // input
-) => O.Option<OrderAcknowledgmentSent>; // output
-
-// ---------------------------
-// Create events
-// ---------------------------
-
-export type CreateEvents = (
-  order: PricedOrder // input
-) => (
-  orderAcknowledgementSent: O.Option<OrderAcknowledgmentSent> // input (event from previous step)
-) => PlaceOrderEvent[]; // output
+import { createPricingMethod } from "./place-order.pricing";
 
 // ======================================================
 // Section 2 : Implementation
@@ -192,10 +99,17 @@ export const toCustomerInfo = (
         E.mapLeft(ValidationError.fromOtherErrors) // convert creation error into ValidationError
       )
     ),
-    E.map(({ firstName, lastName, emailAddress }) => ({
+    E.bind("vipStatus", () =>
+      pipe(
+        VipStatus.create("vipStatus", unvalidatedCustomerInfo.vipStatus),
+        E.mapLeft(ValidationError.fromOtherErrors)
+      )
+    ),
+    E.map(({ firstName, lastName, emailAddress, vipStatus }) => ({
       _tag: "CustomerInfo",
       name: { _tag: "PersonalName", firstName, lastName },
       emailAddress,
+      vipStatus,
     }))
   );
 
@@ -247,6 +161,18 @@ export const toAddress = (
       pipe(
         ZipCode.create("ZipCode", checkedAddress.value.zipCode),
         E.mapLeft(ValidationError.fromOtherErrors) // convert creation error into ValidationError
+      )
+    ),
+    E.bind("state", () =>
+      pipe(
+        UsStateCode.create("State", checkedAddress.value.state),
+        E.mapLeft(ValidationError.fromOtherErrors)
+      )
+    ),
+    E.bind("country", () =>
+      pipe(
+        String50.create("Country", checkedAddress.value.country),
+        E.mapLeft(ValidationError.fromOtherErrors)
       )
     ),
     E.map((data) => ({
@@ -350,10 +276,19 @@ export const validateOrder: ValidateOrder =
           unvalidatedOrder.lines.map(
             toValidatedOrderLine(checkProductCodeExists)
           ),
-          (x) => x,
-          A.sequence(E.Applicative),
+          A.sequence(E.Applicative), // convert list of Results to a single Result
           TE.fromEither
         )
+      ),
+      TE.bind("pricingMethod", () =>
+        TE.of(pipe(createPricingMethod(unvalidatedOrder.promotionCode)))
+      ),
+      TE.map(
+        ({
+          checkedShippingAddress,
+          checkedBillingAddress,
+          ...validatedOrder
+        }) => validatedOrder
       )
     );
 
@@ -365,31 +300,60 @@ export const toPricedOrderLine =
   (getProductPrice: GetProductPrice) =>
   (
     validatedOrderLine: ValidatedOrderLine
-  ): E.Either<ValidationError, PricedOrderLine> => {
+  ): E.Either<ValidationError, PricedOrderProductLine> => {
     const price = getProductPrice(validatedOrderLine.productCode);
     return pipe(
       Price.multiply(validatedOrderLine.quantity.value, price),
       E.mapLeft(ValidationError.fromOtherErrors),
       E.map((linePrice) => ({
         ...validatedOrderLine,
-        _tag: "PricedOrderLine",
+        _tag: "PricedOrderProductLine",
         linePrice,
       }))
     );
   };
+
+// add the special comment line if needed
+export const addCommentLine =
+  (pricingMethod: PricingMethod) =>
+  (lines: PricedOrderLine[]): PricedOrderLine[] => {
+    switch (pricingMethod) {
+      case "Standard":
+        // unchanged
+        return lines;
+      default:
+        const commentLine: PricedOrderLine = {
+          _tag: "CommentLine",
+          value: `Applied promotion ${pricingMethod.value}`,
+        };
+        return lines.concat([commentLine]);
+    }
+  };
+
+export const getLinePrice = (line: PricedOrderLine): Price => {
+  switch (line._tag) {
+    case "PricedOrderProductLine":
+      return line.linePrice;
+    case "CommentLine":
+      return Price.unsafeCreate(0);
+  }
+};
 
 export const priceOrder: PriceOrder = (getProductPrice) => (validatedOrder) =>
   pipe(
     E.Do,
     E.bind("lines", () =>
       pipe(
-        validatedOrder.lines.map(toPricedOrderLine(getProductPrice)),
-        A.sequence(E.Applicative) // convert list of Results to a single Result
+        validatedOrder.lines.map(
+          toPricedOrderLine(getProductPrice(validatedOrder.pricingMethod))
+        ),
+        A.sequence(E.Applicative), // convert list of Results to a single Result
+        E.map((lines) => addCommentLine(validatedOrder.pricingMethod)(lines))
       )
     ),
     E.bind("amountToBill", ({ lines }) =>
       pipe(
-        lines.map(({ linePrice }) => linePrice), // get each line price
+        lines.map(getLinePrice), // get each line price
         BillingAmount.sumPrices, // add them together as a BillingAmount
         E.mapLeft(PricingError.fromOtherErrors) // convert to PlaceOrderError
       )
@@ -403,17 +367,80 @@ export const priceOrder: PriceOrder = (getProductPrice) => (validatedOrder) =>
   );
 
 // ---------------------------
+// Shipping step
+// ---------------------------
+
+export const calculateShippingCost: CalculateShippingCost = (pricedOrder) => {
+  type UsStateClassification =
+    | "UsLocalState"
+    | "UsRemoteState"
+    | "International";
+
+  const getUsStateClassification = (
+    address: Address
+  ): UsStateClassification => {
+    if (address.country.value === "US") {
+      if (["CA", "OR", "AZ", "NV"].includes(address.state.value))
+        return "UsLocalState";
+      return "UsRemoteState";
+    }
+    return "International";
+  };
+
+  switch (getUsStateClassification(pricedOrder.shippingAddress)) {
+    case "UsLocalState":
+      return Price.unsafeCreate(5);
+    case "UsRemoteState":
+      return Price.unsafeCreate(10);
+    case "International":
+      return Price.unsafeCreate(20);
+  }
+};
+
+export const addShippingInfoToOrder: AddShippingInfoToOrder =
+  (calculateShippingCost) => (pricedOrder) => ({
+    pricedOrder,
+    // create the shipping info
+    // add it to the order
+    shippingInfo: {
+      shippingMethod: "Fedex24",
+      shippingCost: calculateShippingCost(pricedOrder),
+    },
+  });
+
+// ---------------------------
+// VIP shipping step
+// ---------------------------
+
+// Update the shipping cost if customer is VIP
+export const freeVipShipping: FreeVipShipping = (order) => {
+  switch (order.pricedOrder.customerInfo.vipStatus) {
+    case "Normal":
+      return order;
+    case "Vip":
+      return {
+        ...order,
+        shippingInfo: {
+          shippingMethod: "Fedex24",
+          shippingCost: Price.unsafeCreate(0),
+        },
+      };
+  }
+};
+
+// ---------------------------
 // AcknowledgeOrder step
 // ---------------------------
 
 export const acknowledgeOrder: AcknowledgeOrder =
   (createOrderAcknowledgmentLetter) =>
   (sendOrderAcknowledgement) =>
-  (pricedOrder) => {
-    const letter = createOrderAcknowledgmentLetter(pricedOrder);
+  (pricedOrderWithShipping) => {
+    const letter = createOrderAcknowledgmentLetter(pricedOrderWithShipping);
     const acknowledgement: OrderAcknowledgment = {
       _tag: "OrderAcknowledgement",
-      emailAddress: pricedOrder.customerInfo.emailAddress,
+      emailAddress:
+        pricedOrderWithShipping.pricedOrder.customerInfo.emailAddress,
       letter,
     };
 
@@ -423,8 +450,9 @@ export const acknowledgeOrder: AcknowledgeOrder =
       case "Sent":
         return O.some({
           _tag: "OrderAcknowledgementSent",
-          orderId: pricedOrder.orderId,
-          emailAddress: pricedOrder.customerInfo.emailAddress,
+          orderId: pricedOrderWithShipping.pricedOrder.orderId,
+          emailAddress:
+            pricedOrderWithShipping.pricedOrder.customerInfo.emailAddress,
         });
       case "NotSent":
         return O.none;
@@ -435,8 +463,38 @@ export const acknowledgeOrder: AcknowledgeOrder =
 // Create events
 // ---------------------------
 
-export const createOrderPlacedEvent = (placedOrder: PricedOrder): OrderPlaced =>
-  placedOrder;
+export const makeShipmentLine = (
+  line: PricedOrderLine
+): O.Option<ShippableOrderLine> => {
+  switch (line._tag) {
+    case "PricedOrderProductLine":
+      return O.some({ ...line, _tag: "ShippableOrderLine" });
+    case "CommentLine":
+      return O.none;
+  }
+};
+
+export const createShippingEvent = ({
+  orderId,
+  shippingAddress,
+  lines,
+}: PricedOrder): ShippableOrderPlaced => ({
+  _tag: "ShippableOrderPlaced",
+  orderId,
+  shippingAddress,
+  shipmentLines:
+    pipe(
+      lines,
+      A.map(makeShipmentLine),
+      A.filter((opt) => O.isSome(opt)),
+      A.sequence(O.Applicative),
+      O.toNullable
+    ) || [],
+  pdf: {
+    name: `Order${orderId.value}.pdf`,
+    bytes: "",
+  },
+});
 
 export const createBillingEvent = ({
   amountToBill,
@@ -462,7 +520,7 @@ export const listOfOption = <T>(opt: O.Option<T>) =>
 export const createEvents: CreateEvents =
   (pricedOrder) => (acknowledgemententEventOpt) => {
     const acknowledgemententEvents = listOfOption(acknowledgemententEventOpt);
-    const orderPlacedEvent = createOrderPlacedEvent(pricedOrder);
+    const orderPlacedEvent = createShippingEvent(pricedOrder);
     const billingEvents = listOfOption(createBillingEvent(pricedOrder));
 
     return [...acknowledgemententEvents, orderPlacedEvent, ...billingEvents];
@@ -475,7 +533,7 @@ export const createEvents: CreateEvents =
 export const placeOrder =
   (checkProductExists: CheckProductCodeExists) =>
   (checkAddressExists: CheckAddressExists) =>
-  (getProductPrice: GetProductPrice) =>
+  (getProductPrice: GetPricingFunction) =>
   (createOrderAcknowledgmentLetter: CreateOrderAcknowledgmentLetter) =>
   (sendOrderAcknowledgment: SendOrderAcknowledgment): PlaceOrder =>
   (unvalidatedOrder) =>
@@ -487,11 +545,20 @@ export const placeOrder =
       TE.bind("pricedOrder", ({ validatedOrder }) =>
         TE.fromEither(priceOrder(getProductPrice)(validatedOrder))
       ),
-      TE.bind("acknowledgementOption", ({ pricedOrder }) =>
+      TE.bind("pricedOrderWithShipping", ({ pricedOrder }) =>
+        TE.of(
+          pipe(
+            pricedOrder,
+            addShippingInfoToOrder(calculateShippingCost),
+            freeVipShipping
+          )
+        )
+      ),
+      TE.bind("acknowledgementOption", ({ pricedOrderWithShipping }) =>
         TE.of(
           acknowledgeOrder(createOrderAcknowledgmentLetter)(
             sendOrderAcknowledgment
-          )(pricedOrder)
+          )(pricedOrderWithShipping)
         )
       ),
       TE.map(({ pricedOrder, acknowledgementOption }) =>

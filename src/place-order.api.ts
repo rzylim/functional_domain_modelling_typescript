@@ -6,19 +6,28 @@
 // 3) The output is turned into a DTO which is turned into a HttpResponse
 // ======================================================
 
+import * as O from "fp-ts/Option";
 import * as E from "fp-ts/Either";
 import * as T from "fp-ts/Task";
 import * as TE from "fp-ts/TaskEither";
 
 import { Price } from "./common.simple-types";
-import { PlaceOrderError, PlaceOrderEvent } from "./place-order.public-types";
+
 import {
   CheckAddressExists,
   CheckProductCodeExists,
   CreateOrderAcknowledgmentLetter,
+  GetPricingFunction,
   GetProductPrice,
-  placeOrder,
+  PromotionCode,
   SendOrderAcknowledgment,
+  TryGetProductPrice,
+} from "./place-order.internal-types";
+import { getPricingFunction as gPF } from "./place-order.pricing";
+import { PlaceOrderError, PlaceOrderEvent } from "./place-order.public-types";
+import {
+  calculateShippingCost as cSC,
+  placeOrder,
 } from "./place-order.implementation";
 import {
   OrderFormDto,
@@ -66,8 +75,38 @@ export const checkAddressExists: CheckAddressExists = (unvalidatedAddress) =>
     value: unvalidatedAddress,
   }); // dummy implementation
 
-export const getProductPrice: GetProductPrice = (_code) =>
-  Price.unsafeCreate(1_000_000); // dummy implementation
+export const getStandardPrices = (): GetProductPrice => (_productCode) =>
+  Price.unsafeCreate(10_000_000); // dummy implementation
+
+export const getPromotionPrices = (
+  promotionCode: PromotionCode
+): TryGetProductPrice => {
+  const halfPricePromotion: TryGetProductPrice = (productCode) =>
+    productCode.value === "ONSALE"
+      ? O.some(Price.unsafeCreate(5_000_000))
+      : O.none;
+
+  const quarterPricePromotion: TryGetProductPrice = (productCode) =>
+    productCode.value === "ONSALE"
+      ? O.some(Price.unsafeCreate(2_500_000))
+      : O.none;
+
+  const noPromotion: TryGetProductPrice = (_productCode) => O.none;
+
+  switch (promotionCode.value) {
+    case "HALF":
+      return halfPricePromotion;
+    case "QUARTER":
+      return quarterPricePromotion;
+    default:
+      return noPromotion;
+  }
+};
+
+export const getPricingFunction: GetPricingFunction =
+  gPF(getStandardPrices)(getPromotionPrices);
+
+export const calculateShippingCost = cSC;
 
 export const createOrderAcknowledgmentLetter: CreateOrderAcknowledgmentLetter =
   (_pricedOrder) => ({ _tag: "HtmlString", value: "some text" }); // dummy implementation
@@ -105,7 +144,7 @@ export const placeOrderApi: PlaceOrderApi = (request) => {
 
   // setup the dependencies. See "Injecting Dependencies" in chapter 9
   const workflow = placeOrder(checkProductExists)(checkAddressExists)(
-    getProductPrice
+    getPricingFunction
   )(createOrderAcknowledgmentLetter)(sendOrderAcknowledgment);
 
   // now we are in the pure domain

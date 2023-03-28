@@ -5,18 +5,20 @@
 
 import * as TE from "fp-ts/TaskEither";
 
-import { Address, CustomerInfo } from "./common.compound-types";
 import {
   BillingAmount,
   EmailAddress,
   OrderId,
-  OrderLineId,
-  OrderQuantity,
-  Price,
-  ProductCode,
   ConstrainedTypeError,
   ProductCodeError,
+  PdfAttachment,
+  ProductCode,
+  OrderQuantity,
+  VipStatusError,
 } from "./common.simple-types";
+import { Address } from "./common.compound-types";
+
+import { PricedOrder } from "./place-order.internal-types";
 
 // ------------------------------------
 // inputs to the workflow
@@ -28,6 +30,7 @@ export type UnvalidatedCustomerInfo = {
   firstName: string;
   lastName: string;
   emailAddress: string;
+  vipStatus: string;
 };
 
 export type UnvalidatedAddress = {
@@ -37,6 +40,8 @@ export type UnvalidatedAddress = {
   addressLine4: string;
   city: string;
   zipCode: string;
+  state: string;
+  country: string;
 };
 
 export type UnvalidatedOrderLine = {
@@ -51,6 +56,7 @@ export type UnvalidatedOrder = {
   shippingAddress: UnvalidatedAddress;
   billingAddress: UnvalidatedAddress;
   lines: UnvalidatedOrderLine[];
+  promotionCode: string;
 };
 
 // ------------------------------------
@@ -63,30 +69,25 @@ export type OrderAcknowledgmentSent = {
   emailAddress: EmailAddress;
 };
 
-// priced state
-export type PricedOrderLine = {
-  _tag: "PricedOrderLine";
-  orderLineId: OrderLineId;
-  productCode: ProductCode;
-  quantity: OrderQuantity;
-  linePrice: Price;
-};
-
-export type PricedOrder = {
-  _tag: "PricedOrder";
-  orderId: OrderId;
-  customerInfo: CustomerInfo;
-  shippingAddress: Address;
-  billingAddress: Address;
-  amountToBill: BillingAmount;
-  lines: PricedOrderLine[];
-};
-
-/// Event to send to shipping context
+// Event to send to shipping context
 export type OrderPlaced = PricedOrder;
 
-/// Event to send to billing context
-/// Will only be created if the AmountToBill is not zero
+export type ShippableOrderLine = {
+  _tag: "ShippableOrderLine";
+  productCode: ProductCode;
+  quantity: OrderQuantity;
+};
+
+export type ShippableOrderPlaced = {
+  _tag: "ShippableOrderPlaced";
+  orderId: OrderId;
+  shippingAddress: Address;
+  shipmentLines: ShippableOrderLine[];
+  pdf: PdfAttachment;
+};
+
+// Event to send to billing context
+// Will only be created if the AmountToBill is not zero
 export type BillableOrderPlaced = {
   _tag: "BillableOrderPlaced";
   orderId: OrderId;
@@ -94,17 +95,17 @@ export type BillableOrderPlaced = {
   amountToBill: BillingAmount;
 };
 
-/// The possible events resulting from the PlaceOrder workflow
-/// Not all events will occur, depending on the logic of the workflow
+// The possible events resulting from the PlaceOrder workflow
+// Not all events will occur, depending on the logic of the workflow
 export type PlaceOrderEvent =
-  | OrderPlaced
+  | ShippableOrderPlaced
   | BillableOrderPlaced
   | OrderAcknowledgmentSent;
 
 // ------------------------------------
 // error outputs
 
-/// All the things that can go wrong in this workflow
+// All the things that can go wrong in this workflow
 export class ValidationError extends Error {
   _tag = "ValidationError";
   name = "ValidationError";
@@ -119,7 +120,7 @@ export class ValidationError extends Error {
     fieldName,
     message,
     stack,
-  }: ConstrainedTypeError | ProductCodeError) {
+  }: ConstrainedTypeError | ProductCodeError | VipStatusError) {
     const err = new ValidationError(fieldName, message);
     err.stack = stack;
     return err;

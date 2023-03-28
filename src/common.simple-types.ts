@@ -67,6 +67,42 @@ export const EmailAddress = {
     ConstrainedType.createLike(fieldName, constructEmailAddress, /.+@.+/, str),
 };
 
+// Customer's VIP status
+export type VipStatus = "Normal" | "Vip";
+export const VipStatus = {
+  create: (
+    fieldName: string,
+    str: string
+  ): E.Either<VipStatusError, VipStatus> => {
+    switch (str) {
+      case "normal":
+      case "Normal":
+        return E.right("Normal");
+      case "vip":
+      case "VIP":
+        return E.right("Vip");
+      default:
+        return E.left(
+          new VipStatusError(
+            fieldName,
+            `${str}: Must be one of 'Normal', 'VIP'`
+          )
+        );
+    }
+  },
+};
+
+export class VipStatusError extends Error {
+  _tag = "VipStatusError";
+  name = "VipStatusError";
+  fieldName: string;
+
+  constructor(fieldName: string, message: string) {
+    super(message);
+    this.fieldName = fieldName;
+  }
+}
+
 // A zip code
 declare const validZipCode: unique symbol;
 export type ZipCode = {
@@ -83,7 +119,31 @@ export const ZipCode = {
   // Create a ZipCode from a string
   // Return Error if input is null, empty, or doesn't have 5 digits
   create: (fieldName: string, str: string) =>
-    ConstrainedType.createLike(fieldName, constructZipCode, /\d{5}/, str),
+    ConstrainedType.createLike(
+      fieldName,
+      constructZipCode,
+      /^(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|P[AR]|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])$/,
+      str
+    ),
+};
+
+// A US 2 letter state code
+declare const validUsStateCode: unique symbol;
+export type UsStateCode = {
+  [validUsStateCode]: true;
+  readonly _tag: "UsStateCode";
+  readonly value: string;
+};
+const constructUsStateCode = (value: string): UsStateCode => ({
+  [validUsStateCode]: true,
+  _tag: "UsStateCode",
+  value,
+});
+export const UsStateCode = {
+  // Create a ZipCode from a string
+  // Return Error if input is null, empty, or doesn't have 5 digits
+  create: (fieldName: string, str: string) =>
+    ConstrainedType.createLike(fieldName, constructUsStateCode, /\d{5}/, str),
 };
 
 // An Id for Orders. Constrained to be a non-empty string < 10 chars
@@ -352,7 +412,7 @@ export const BillingAmount = {
 // Represents a PDF attachment
 export type PdfAttachment = {
   name: string;
-  Bytes: ArrayBuffer;
+  bytes: string;
 };
 
 // ===============================
