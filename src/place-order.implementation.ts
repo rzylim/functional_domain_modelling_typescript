@@ -246,7 +246,8 @@ export const toValidatedOrderLine =
       ),
       E.bind("quantity", ({ productCode }) =>
         toOrderQuantity(productCode, unvalidatedOrderLine.quantity)
-      )
+      ),
+      E.map((data) => ({ _tag: "ValidatedOrderLine", ...data }))
     );
 
 export const validateOrder: ValidateOrder =
@@ -288,7 +289,7 @@ export const validateOrder: ValidateOrder =
           checkedShippingAddress,
           checkedBillingAddress,
           ...validatedOrder
-        }) => validatedOrder
+        }) => ({ _tag: "ValidatedOrder", ...validatedOrder })
       )
     );
 
@@ -359,8 +360,8 @@ export const priceOrder: PriceOrder = (getProductPrice) => (validatedOrder) =>
       )
     ),
     E.map(({ lines, amountToBill }) => ({
-      _tag: "PricedOrder",
       ...validatedOrder,
+      _tag: "PricedOrder",
       lines,
       amountToBill,
     }))
@@ -399,10 +400,12 @@ export const calculateShippingCost: CalculateShippingCost = (pricedOrder) => {
 
 export const addShippingInfoToOrder: AddShippingInfoToOrder =
   (calculateShippingCost) => (pricedOrder) => ({
+    _tag: "PricedOrderWithShippingMethod",
     pricedOrder,
     // create the shipping info
     // add it to the order
     shippingInfo: {
+      _tag: "ShippingInfo",
       shippingMethod: "Fedex24",
       shippingCost: calculateShippingCost(pricedOrder),
     },
@@ -421,6 +424,7 @@ export const freeVipShipping: FreeVipShipping = (order) => {
       return {
         ...order,
         shippingInfo: {
+          _tag: "ShippingInfo",
           shippingMethod: "Fedex24",
           shippingCost: Price.unsafeCreate(0),
         },

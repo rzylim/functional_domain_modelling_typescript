@@ -58,12 +58,14 @@ export type PromotionCode = { _tag: "PromotionCode"; value: string };
 export type PricingMethod = "Standard" | PromotionCode;
 
 export type ValidatedOrderLine = {
+  _tag: "ValidatedOrderLine";
   orderLineId: OrderLineId;
   productCode: ProductCode;
   quantity: OrderQuantity;
 };
 
 export type ValidatedOrder = {
+  _tag: "ValidatedOrder";
   orderId: OrderId;
   customerInfo: CustomerInfo;
   shippingAddress: Address;
@@ -136,11 +138,13 @@ export type PriceOrder = (
 export type ShippingMethod = "PostalService" | "Fedex24" | "Fedex48" | "Ups48";
 
 export type ShippingInfo = {
+  _tag: "ShippingInfo";
   shippingMethod: ShippingMethod;
   shippingCost: Price;
 };
 
 export type PricedOrderWithShippingMethod = {
+  _tag: "PricedOrderWithShippingMethod";
   shippingInfo: ShippingInfo;
   pricedOrder: PricedOrder;
 };
