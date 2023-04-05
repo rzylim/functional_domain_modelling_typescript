@@ -1,6 +1,8 @@
 import * as O from "fp-ts/Option";
 import * as E from "fp-ts/Either";
 
+import { Newable } from "./utility-types";
+
 /// Constrained to be 50 chars or less, not null
 declare const validString50: unique symbol; // do not export! keep private so that instances have to be created via the provided create function that enforces checks.
 export type String50 = {
@@ -25,12 +27,11 @@ export const String50 = {
   createOption: (fieldName: string, str: string) =>
     ConstrainedType.createStringOption(fieldName, constructString50, 50, str),
 };
-// not using class as constructor cannot be protected
+// not using class as constructor cannot be protected adequately
 // while still using generic utilities like ConstrainedType.
-// constructor also can't return E.Either.
 // export class String50 {
-//   [validString50]: true;
-//   readonly _tag: "String50";
+//   [validString50] = true;
+//   readonly _tag = "String50";
 //   readonly _value: string;
 
 //   private constructor(value: string) {
@@ -41,10 +42,7 @@ export const String50 = {
 //     return this._value;
 //   }
 //   static create(fieldName: string, str: string) {
-//     return pipe(
-//       ConstrainedType.createStringClass(fieldName, 50, str),
-//       map(new String50()) // how to pipe into constructor?
-//     );
+//     return ConstrainedType.createStringClass(fieldName, String50, 50, str);
 //   }
 // }
 
@@ -436,7 +434,7 @@ export class ConstrainedTypeError extends Error {
   }
 }
 
-/// Useful functions for constrained types
+// Useful functions for constrained types
 const ConstrainedType = {
   // Create a constrained string using the constructor provided
   // Return Error if input is null, empty, or length > maxLen
@@ -463,11 +461,12 @@ const ConstrainedType = {
     return E.right(constructor(str));
   },
   // createString, for use with classes. testing.
-  createStringClass: (
+  createStringClass: <T>(
     fieldName: string,
+    Class: Newable<T>,
     maxLen: number,
     str: string
-  ): E.Either<ConstrainedTypeError, string> => {
+  ): E.Either<ConstrainedTypeError, T> => {
     if (!str)
       return E.left(
         new ConstrainedTypeError(
@@ -482,7 +481,7 @@ const ConstrainedType = {
           `${fieldName} must not be more than ${maxLen} chars`
         )
       );
-    return E.right(str);
+    return E.right(new Class(str));
   },
   // Create a optional constrained string using the constructor provided
   // Return None if input is null, empty.
